@@ -1,2 +1,9 @@
 .env
 .DS_Store
+
+# SDS docx build intermediates
+sds/.pandoc-build/
+
+# Python
+__pycache__/
+*.py[cod]

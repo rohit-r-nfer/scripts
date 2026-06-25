@@ -1,6 +1,0 @@
----
-title: t
----
-
-Body text.
-
