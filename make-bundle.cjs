@@ -88,27 +88,26 @@ const SAMD_MAPPING = [
 
 /** @type {RepoPin[]} */
 const NON_SAMD_MAPPING = [
-  { folder: "utils.js", ref: "v3.0.3" },
-  { folder: "three-js-utils", ref: "v3.0.4" },
-  { folder: "geodesic-path.js", ref: "v1.0.5" },
-  { folder: "us-dicom-viewer", ref: "v1.0.13" },
-  { folder: "anu", ref: "v1.1.0" },
-  { folder: "formbae", ref: "v0.0.1" },
-  { folder: "3d-heart", ref: "v3.0.0" },
-  { folder: "tee-ui-components", ref: "v2.0.1" },
-  { folder: "tee-laac-ui", ref: "v1.0.5" },
+  { folder: "utils.js", ref: "v3.0.5" },
+  { folder: "three-js-utils", ref: "v3.0.6" },
+  { folder: "us-dicom-viewer", ref: "v1.0.15" },
+  { folder: "anu", ref: "v1.1.2" },
+  { folder: "formbae", ref: "v0.0.4" },
+  { folder: "3d-heart", ref: "v3.0.1" },
+  { folder: "tee-ui-components", ref: "v2.0.3" },
+  { folder: "tee-laac-ui", ref: "v1.0.6" },
 ];
 
 /** @type {RepoPin[]} */
 const VIEWER_MAPPING = [
-  { folder: "utils.js", ref: "v3.0.3" },
-  { folder: "three-js-utils", ref: "v3.0.4" },
-  { folder: "geodesic-path.js", ref: "v1.0.5" },
-  { folder: "us-dicom-viewer", ref: "v1.0.13" },
-  { folder: "anu", ref: "v1.1.0" },
-  { folder: "3d-heart", ref: "v3.0.0" },
-  { folder: "tee-ui-components", ref: "v2.0.1" },
-  { folder: "watchmate-ui", ref: "v1.1.0" },
+  { folder: "utils.js", ref: "v3.0.5" },
+  { folder: "three-js-utils", ref: "v3.0.6" },
+  { folder: "geodesic-path.js", ref: "v1.0.7" },
+  { folder: "us-dicom-viewer", ref: "v1.0.15" },
+  { folder: "anu", ref: "v1.1.2" },
+  { folder: "3d-heart", ref: "v3.0.1" },
+  { folder: "tee-ui-components", ref: "v2.0.3" },
+  { folder: "watchmate-ui", ref: "v1.1.3" },
 ];
 
 /**
