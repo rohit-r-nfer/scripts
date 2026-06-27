@@ -10,11 +10,17 @@
  * Prerequisites: git, npm, zip (CLI)
  *
  * Usage: node scripts/test-report-generator.cjs
+ *
+ * Env:
+ *   CLONE_CONCURRENCY=1   sequential git clones (default)
+ *   TEST_CONCURRENCY=3    parallel install/test (default; CONCURRENCY alias)
+ *   CLONE_TIMEOUT_MS      git clone timeout (default 5m)
+ *   INSTALL_TIMEOUT_MS    npm install timeout (default 15m)
+ *   TEST_TIMEOUT_MS       npm test timeout (default 30m)
  */
 
 const { execSync, spawn } = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const readline = require("readline");
 
@@ -24,6 +30,11 @@ const STAGE_DIR = path.join(OUTPUT_DIR, "stage");
 const DEFAULT_TEST_COMMAND = "npm run test";
 const DEFAULT_TEST_RESULTS_DIR = "test-results";
 
+const CLONE_TIMEOUT_MS = parseEnvInt("CLONE_TIMEOUT_MS", 5 * 60 * 1000);
+const INSTALL_TIMEOUT_MS = parseEnvInt("INSTALL_TIMEOUT_MS", 15 * 60 * 1000);
+const TEST_TIMEOUT_MS = parseEnvInt("TEST_TIMEOUT_MS", 30 * 60 * 1000);
+const KILL_GRACE_MS = 5000;
+
 function isTruthyEnv(value) {
   if (!value) return false;
   return ["1", "true", "yes", "y", "on"].includes(String(value).toLowerCase());
@@ -32,6 +43,20 @@ function isTruthyEnv(value) {
 function isFalsyEnv(value) {
   if (value === undefined || value === null) return false;
   return ["0", "false", "no", "n", "off"].includes(String(value).toLowerCase());
+}
+
+/**
+ * @param {string} name
+ * @param {number} fallback
+ */
+function parseEnvInt(name, fallback) {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** @param {number} ms */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Default: suppress command output. Opt out with SUPPRESS_CONSOLE=0/false/off.
@@ -69,7 +94,7 @@ const projects = [
   {
     name: "watchmate-ui-viewer",
     title: "WatchMate UI Viewer",
-    tag: "dev",
+    tag: "v1.1.3",
     gitUrl: "https://github.com/lumenbiomics/watchmate-ui.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -79,7 +104,7 @@ const projects = [
   {
     name: "3d-heart",
     title: "3D Heart",
-    tag: "v3.0.0",
+    tag: "v3.0.1",
     gitUrl: "https://github.com/lumenbiomics/3d-heart.git",
     artifacts: [
       { source: "verbose-test-report.html", dest: "test-report.html" },
@@ -89,7 +114,7 @@ const projects = [
   {
     name: "three-js-utils",
     title: "Three.js Utils",
-    tag: "v3.0.4",
+    tag: "v3.0.6",
     gitUrl: "https://github.com/lumenbiomics/three-js-utils.git",
     artifacts: [
       { source: "verbose-test-report.html", dest: "test-report.html" },
@@ -99,7 +124,7 @@ const projects = [
   {
     name: "geodesic-path",
     title: "Geodesic Path",
-    tag: "v1.0.5",
+    tag: "v1.0.7",
     gitUrl: "https://github.com/lumenbiomics/geodesic-path.js.git",
     testCommand: "npm run test:all",
     artifacts: [
@@ -112,7 +137,7 @@ const projects = [
   {
     name: "us-dicom-viewer",
     title: "US DICOM Viewer",
-    tag: "dev",
+    tag: "v1.0.15",
     gitUrl: "https://github.com/lumenbiomics/us-dicom-viewer.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -122,7 +147,7 @@ const projects = [
   {
     name: "utils-js",
     title: "Utils",
-    tag: "dev",
+    tag: "v3.0.5",
     gitUrl: "https://github.com/lumenbiomics/utils.js.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -132,8 +157,9 @@ const projects = [
   {
     name: "tee-ui-components",
     title: "Tee UI Components",
-    tag: "dev",
+    tag: "v2.0.3",
     gitUrl: "https://github.com/lumenbiomics/tee-ui-components.git",
+    testCommand: "npm run build && npm run test",
     artifacts: [
       { source: "test-report.csv" },
       { source: "teeUiComponentsReport.html", dest: "test-report.html" },
@@ -142,7 +168,7 @@ const projects = [
   {
     name: "tee-laac-ui",
     title: "Tee LAAC UI",
-    tag: "dev",
+    tag: "v1.0.6",
     gitUrl: "https://github.com/lumenbiomics/tee-laac-ui.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -152,7 +178,7 @@ const projects = [
   {
     name: "anu",
     title: "Anu",
-    tag: "dev",
+    tag: "v1.1.2",
     testCommand: "npm run unit-test",
     gitUrl: "https://github.com/lumenbiomics/anu.git",
     artifacts: [
@@ -163,7 +189,7 @@ const projects = [
   {
     name: "formanu",
     title: "Formanu",
-    tag: "dev",
+    tag: "v0.0.4",
     gitUrl: "https://github.com/lumenbiomics/formbae.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -202,55 +228,132 @@ function prefixLine(label, line) {
 /**
  * Run a shell command asynchronously and stream output with a prefix label.
  * @param {string} command
- * @param {{ cwd?: string; label?: string }} [options]
+ * @param {{ cwd?: string; label?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv }} [options]
  * @returns {Promise<void>}
  */
 function execAsync(command, options = {}) {
   const label = options.label ?? "cmd";
+  const timeoutMs = options.timeoutMs ?? 0;
   prefixLine(label, `$ ${command}`);
 
   return new Promise((resolve, reject) => {
+    /** @type {import('readline').Interface | undefined} */
+    let outRl;
+    /** @type {import('readline').Interface | undefined} */
+    let errRl;
+    /** @type {NodeJS.Timeout | undefined} */
+    let killTimer;
+    /** @type {NodeJS.Timeout | undefined} */
+    let timeoutTimer;
+    let settled = false;
+
     const child = spawn(command, {
       cwd: options.cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: options.env ?? process.env,
     });
-
-    if (!SUPPRESS_CONSOLE) {
-      const outRl = readline.createInterface({ input: child.stdout });
-      const errRl = readline.createInterface({ input: child.stderr });
-      outRl.on("line", (line) => prefixLine(label, line));
-      errRl.on("line", (line) => prefixLine(label, line));
-      child.on("close", () => {
-        outRl.close();
-        errRl.close();
-      });
-    }
 
     /** @type {Buffer[]} */
     const outChunks = [];
     /** @type {Buffer[]} */
     const errChunks = [];
 
-    if (SUPPRESS_CONSOLE) {
+    const flushCapturedOutput = () => {
+      if (!SUPPRESS_CONSOLE) return;
+      const out = Buffer.concat(outChunks).toString("utf8");
+      const err = Buffer.concat(errChunks).toString("utf8");
+      if (out.trim()) process.stdout.write(out);
+      if (err.trim()) process.stderr.write(err);
+    };
+
+    const closeReaders = () => {
+      outRl?.close();
+      errRl?.close();
+    };
+
+    const killChild = () => {
+      if (child.killed) return;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!child.killed) child.kill("SIGKILL");
+      }, KILL_GRACE_MS);
+    };
+
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      clearTimeout(killTimer);
+      closeReaders();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    if (!SUPPRESS_CONSOLE) {
+      outRl = readline.createInterface({ input: child.stdout });
+      errRl = readline.createInterface({ input: child.stderr });
+      outRl.on("line", (line) => prefixLine(label, line));
+      errRl.on("line", (line) => prefixLine(label, line));
+    } else {
       child.stdout.on("data", (b) => outChunks.push(Buffer.from(b)));
       child.stderr.on("data", (b) => errChunks.push(Buffer.from(b)));
     }
 
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      if (code === 0) return resolve();
+    if (timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        prefixLine(
+          label,
+          `Command timed out after ${Math.round(timeoutMs / 1000)}s, killing...`,
+        );
+        killChild();
+        finish(new Error(`Command timed out after ${timeoutMs}ms: ${command}`));
+      }, timeoutMs);
+    }
 
-      if (SUPPRESS_CONSOLE) {
-        const out = Buffer.concat(outChunks).toString("utf8");
-        const err = Buffer.concat(errChunks).toString("utf8");
-        if (out.trim()) process.stdout.write(out);
-        if (err.trim()) process.stderr.write(err);
-      }
+    child.on("error", (err) => finish(err));
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      if (code === 0) return finish();
 
-      reject(new Error(`Command failed (${code}): ${command}`));
+      flushCapturedOutput();
+      const signalNote = signal ? `, signal ${signal}` : "";
+      finish(new Error(`Command failed (${code}${signalNote}): ${command}`));
     });
   });
+}
+
+/**
+ * @template T
+ * @param {(attempt: number) => Promise<T>} fn
+ * @param {{ attempts?: number; backoffMs?: number; label?: string; onRetry?: (error: Error, attempt: number) => void }} [options]
+ * @returns {Promise<T>}
+ */
+async function execWithRetry(fn, options = {}) {
+  const attempts = options.attempts ?? 3;
+  const backoffMs = options.backoffMs ?? 5000;
+  const label = options.label ?? "cmd";
+  /** @type {Error | undefined} */
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt >= attempts) break;
+
+      options.onRetry?.(lastError, attempt);
+      const delay = backoffMs * 3 ** (attempt - 1);
+      prefixLine(
+        label,
+        `Attempt ${attempt}/${attempts} failed, retrying in ${Math.round(delay / 1000)}s...`,
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -319,23 +422,90 @@ function cleanup() {
 }
 
 /**
- * Async clone for parallel runs.
  * @param {Project} project
+ * @param {Map<string, string>} cloneCacheByGitUrl
  * @returns {Promise<string>}
  */
-async function cloneRepositoryAsync(project) {
+async function cloneRepositoryAsync(project, cloneCacheByGitUrl) {
   const repoPath = path.join(TEMP_DIR, project.name);
-  prefixLine(project.name, `=== Processing: ${project.title} ===`);
+  prefixLine(project.name, `=== Cloning: ${project.title} ===`);
 
-  if (fs.existsSync(repoPath)) {
-    fs.rmSync(repoPath, { recursive: true, force: true });
+  const removePartial = () => {
+    if (fs.existsSync(repoPath)) {
+      fs.rmSync(repoPath, { recursive: true, force: true });
+    }
+  };
+
+  const referencePath = cloneCacheByGitUrl.get(project.gitUrl);
+  let useReference = Boolean(referencePath);
+
+  if (referencePath) {
+    prefixLine(
+      project.name,
+      `Will try reference clone from ${referencePath} (same git URL)`,
+    );
   }
 
-  prefixLine(project.name, `Cloning ${project.gitUrl} @ ${project.tag}...`);
-  await execAsync(
-    `git clone --depth 1 --branch ${project.tag} ${project.gitUrl} ${repoPath}`,
-    { label: project.name },
+  removePartial();
+
+  await execWithRetry(
+    async (attempt) => {
+      if (attempt > 1) removePartial();
+      prefixLine(
+        project.name,
+        `Cloning ${project.gitUrl} @ ${project.tag} (attempt ${attempt})...`,
+      );
+
+      const referenceArg =
+        useReference && referencePath
+          ? `--reference ${JSON.stringify(referencePath)}`
+          : "";
+
+      const cloneCmd = [
+        "git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 clone",
+        "--depth 1",
+        `--branch ${JSON.stringify(project.tag)}`,
+        referenceArg,
+        JSON.stringify(project.gitUrl),
+        JSON.stringify(repoPath),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      await execAsync(cloneCmd, {
+        label: project.name,
+        timeoutMs: CLONE_TIMEOUT_MS,
+      });
+    },
+    {
+      attempts: 3,
+      backoffMs: 5000,
+      label: project.name,
+      onRetry: (error) => {
+        const message = error.message;
+        const stalled = message.includes("timed out");
+        if (useReference) {
+          useReference = false;
+          prefixLine(
+            project.name,
+            "Reference clone unavailable; retrying without --reference...",
+          );
+        } else {
+          prefixLine(
+            project.name,
+            stalled
+              ? "Clone stalled (timed out or low speed), cleaning up and retrying..."
+              : "Clone failed, cleaning up and retrying...",
+          );
+        }
+        removePartial();
+      },
+    },
   );
+
+  if (!cloneCacheByGitUrl.has(project.gitUrl)) {
+    cloneCacheByGitUrl.set(project.gitUrl, repoPath);
+  }
 
   return repoPath;
 }
@@ -350,12 +520,25 @@ async function installAndTestAsync(project, repoPath) {
   const label = project.name;
   const installCmd = project.installCommand ?? "npm install";
   prefixLine(label, `Installing dependencies (${installCmd})...`);
-  await execAsync(installCmd, { cwd: repoPath, label });
+  await execAsync(installCmd, {
+    cwd: repoPath,
+    label,
+    timeoutMs: INSTALL_TIMEOUT_MS,
+  });
 
   const testCmd = project.testCommand ?? DEFAULT_TEST_COMMAND;
   prefixLine(label, `Running tests: ${testCmd}`);
+  const testEnv = {
+    ...process.env,
+    VITEST_MAX_WORKERS: process.env.VITEST_MAX_WORKERS ?? "2",
+  };
   try {
-    await execAsync(testCmd, { cwd: repoPath, label });
+    await execAsync(testCmd, {
+      cwd: repoPath,
+      label,
+      timeoutMs: TEST_TIMEOUT_MS,
+      env: testEnv,
+    });
     return true;
   } catch {
     prefixLine(
@@ -363,6 +546,23 @@ async function installAndTestAsync(project, repoPath) {
       "⚠ Tests exited with a non-zero code; still collecting test-results if present.",
     );
     return false;
+  }
+}
+
+/**
+ * @param {Project} project
+ * @param {string} repoPath
+ * @returns {Promise<{ project: Project; testsOk: boolean; ok: boolean; reason?: string }>}
+ */
+async function processProjectAsync(project, repoPath) {
+  try {
+    const testsOk = await installAndTestAsync(project, repoPath);
+    await collectTestArtifactsAsync(project, repoPath);
+    return { project, testsOk, ok: true };
+  } catch (error) {
+    const reason = error?.message ? String(error.message) : String(error);
+    prefixLine(project.name, `✗ Failed: ${reason}`);
+    return { project, testsOk: false, ok: false, reason };
   }
 }
 
@@ -457,17 +657,21 @@ async function main() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const zipPath = path.join(OUTPUT_DIR, `test-reports-${stamp}.zip`);
 
-  const envConcurrency = Number.parseInt(process.env.CONCURRENCY ?? "", 10);
-  const defaultConcurrency = Math.max(
-    2,
-    Math.min(4, Math.floor((os.cpus()?.length ?? 4) / 2)),
-  );
-  const concurrency =
-    Number.isFinite(envConcurrency) && envConcurrency > 0
-      ? envConcurrency
-      : defaultConcurrency;
+  const cloneConcurrency = parseEnvInt("CLONE_CONCURRENCY", 1);
+  const testConcurrencyFallback = parseEnvInt("TEST_CONCURRENCY", 0);
+  const legacyConcurrency = parseEnvInt("CONCURRENCY", 0);
+  const testConcurrency =
+    testConcurrencyFallback > 0
+      ? testConcurrencyFallback
+      : legacyConcurrency > 0
+        ? legacyConcurrency
+        : 3;
+
   console.log(
-    `Running with concurrency: ${concurrency} (set CONCURRENCY=N to override)`,
+    `Clone concurrency: ${cloneConcurrency} (CLONE_CONCURRENCY), test concurrency: ${testConcurrency} (TEST_CONCURRENCY / CONCURRENCY)`,
+  );
+  console.log(
+    `Timeouts: clone=${Math.round(CLONE_TIMEOUT_MS / 1000)}s, install=${Math.round(INSTALL_TIMEOUT_MS / 1000)}s, test=${Math.round(TEST_TIMEOUT_MS / 1000)}s`,
   );
   if (SUPPRESS_CONSOLE) {
     console.log(
@@ -475,21 +679,60 @@ async function main() {
     );
   }
 
-  const limit = createLimiter(concurrency);
+  /** @type {Map<string, string>} */
+  const cloneCacheByGitUrl = new Map();
+  /** @type {Map<string, string>} */
+  const repoPaths = new Map();
+  /** @type {Map<string, string>} */
+  const cloneErrors = new Map();
 
+  const cloneLimiter = createLimiter(cloneConcurrency);
+
+  console.log("\n--- Phase 1: Cloning repositories ---");
+  await Promise.all(
+    projects.map((project) =>
+      cloneLimiter(async () => {
+        try {
+          const repoPath = await cloneRepositoryAsync(
+            project,
+            cloneCacheByGitUrl,
+          );
+          repoPaths.set(project.name, repoPath);
+        } catch (error) {
+          const reason =
+            error?.message ? String(error.message) : String(error);
+          cloneErrors.set(project.name, reason);
+          prefixLine(project.name, `✗ Clone failed after retries: ${reason}`);
+        }
+      }),
+    ),
+  );
+
+  const testLimiter = createLimiter(testConcurrency);
+
+  console.log("\n--- Phase 2: Install, test, and collect artifacts ---");
   const results = await Promise.all(
     projects.map((project) =>
-      limit(async () => {
-        try {
-          const repoPath = await cloneRepositoryAsync(project);
-          const testsOk = await installAndTestAsync(project, repoPath);
-          await collectTestArtifactsAsync(project, repoPath);
-          return { project, testsOk, ok: true };
-        } catch (error) {
-          const reason = error?.message ? String(error.message) : String(error);
-          prefixLine(project.name, `✗ Failed: ${reason}`);
-          return { project, testsOk: false, ok: false, reason };
+      testLimiter(async () => {
+        if (cloneErrors.has(project.name)) {
+          return {
+            project,
+            testsOk: false,
+            ok: false,
+            reason: cloneErrors.get(project.name),
+          };
         }
+        const repoPath = repoPaths.get(project.name);
+        if (!repoPath) {
+          return {
+            project,
+            testsOk: false,
+            ok: false,
+            reason: "Clone path missing after phase 1",
+          };
+        }
+        prefixLine(project.name, `=== Processing: ${project.title} ===`);
+        return processProjectAsync(project, repoPath);
       }),
     ),
   );
