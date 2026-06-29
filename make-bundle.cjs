@@ -90,6 +90,7 @@ const SAMD_MAPPING = [
 const NON_SAMD_MAPPING = [
   { folder: "utils.js", ref: "v3.0.5" },
   { folder: "three-js-utils", ref: "v3.0.6" },
+  { folder: "geodesic-path.js", ref: "v1.0.7" },
   { folder: "us-dicom-viewer", ref: "v1.0.15" },
   { folder: "anu", ref: "v1.1.2" },
   { folder: "formbae", ref: "v0.0.4" },
