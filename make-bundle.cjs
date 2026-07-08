@@ -4,11 +4,11 @@
  * Dev Bundle Generator
  *
  * Clones each configured repo at a tag/branch, archives into a stage folder,
- * and produces a tarball for local dev setup (samd, non-samd, or viewer worlds).
+ * and produces a tarball for local dev setup (non_samd, fda_samd, or samd worlds).
  *
  * Prerequisites: git
  *
- * Usage: ./scripts/make-bundle.cjs <samd|non-samd|viewer>
+ * Usage: ./scripts/make-bundle.cjs <non_samd|fda_samd|samd>
  */
 
 const { execSync, spawn } = require("child_process");
@@ -75,7 +75,7 @@ const REPOS = {
 // Edit refs independently per world — no shared tag state across bundles.
 
 /** @type {RepoPin[]} */
-const SAMD_MAPPING = [
+const FDA_SAMD_MAPPING = [
   { folder: "utils.js", ref: "v2.0.3" },
   { folder: "three-js-utils", ref: "v3.0.2" },
   { folder: "geodesic-path.js", ref: "v1.0.5" },
@@ -100,7 +100,7 @@ const NON_SAMD_MAPPING = [
 ];
 
 /** @type {RepoPin[]} */
-const VIEWER_MAPPING = [
+const SAMD_MAPPING = [
   { folder: "utils.js", ref: "v3.0.6" },
   { folder: "three-js-utils", ref: "v3.0.7" },
   { folder: "geodesic-path.js", ref: "v1.0.7" },
@@ -127,9 +127,9 @@ function resolveWorld(mapping) {
 
 /** @type {Record<string, { repos: RepoRef[] }>} */
 const worlds = {
+  non_samd: { repos: resolveWorld(NON_SAMD_MAPPING) },
+  fda_samd: { repos: resolveWorld(FDA_SAMD_MAPPING) },
   samd: { repos: resolveWorld(SAMD_MAPPING) },
-  "non-samd": { repos: resolveWorld(NON_SAMD_MAPPING) },
-  viewer: { repos: resolveWorld(VIEWER_MAPPING) },
 };
 
 function prefixLine(label, line) {
@@ -244,7 +244,7 @@ async function cloneAndArchiveRepo(repo, cloneRoot, stageDir) {
 }
 
 function printUsage() {
-  console.error("usage: make-bundle.cjs <samd|non-samd|viewer>");
+  console.error("usage: make-bundle.cjs <non_samd|fda_samd|samd>");
 }
 
 async function main() {
