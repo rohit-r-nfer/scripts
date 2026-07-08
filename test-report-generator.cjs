@@ -94,7 +94,7 @@ const projects = [
   {
     name: "watchmate-ui-viewer",
     title: "WatchMate UI Viewer",
-    tag: "v1.1.3",
+    tag: "v1.1.5",
     gitUrl: "https://github.com/lumenbiomics/watchmate-ui.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -114,7 +114,7 @@ const projects = [
   {
     name: "three-js-utils",
     title: "Three.js Utils",
-    tag: "v3.0.6",
+    tag: "v3.0.7",
     gitUrl: "https://github.com/lumenbiomics/three-js-utils.git",
     artifacts: [
       { source: "verbose-test-report.html", dest: "test-report.html" },
@@ -137,7 +137,7 @@ const projects = [
   {
     name: "us-dicom-viewer",
     title: "US DICOM Viewer",
-    tag: "v1.0.15",
+    tag: "v1.0.17",
     gitUrl: "https://github.com/lumenbiomics/us-dicom-viewer.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -147,7 +147,7 @@ const projects = [
   {
     name: "utils-js",
     title: "Utils",
-    tag: "v3.0.5",
+    tag: "v3.0.6",
     gitUrl: "https://github.com/lumenbiomics/utils.js.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -157,7 +157,7 @@ const projects = [
   {
     name: "tee-ui-components",
     title: "Tee UI Components",
-    tag: "v2.0.3",
+    tag: "v3.0.1",
     gitUrl: "https://github.com/lumenbiomics/tee-ui-components.git",
     testCommand: "npm run build && npm run test",
     artifacts: [
@@ -168,7 +168,7 @@ const projects = [
   {
     name: "tee-laac-ui",
     title: "Tee LAAC UI",
-    tag: "v1.0.6",
+    tag: "v1.0.7",
     gitUrl: "https://github.com/lumenbiomics/tee-laac-ui.git",
     artifacts: [
       { source: "test-report.csv" },
@@ -178,7 +178,7 @@ const projects = [
   {
     name: "anu",
     title: "Anu",
-    tag: "v1.1.2",
+    tag: "v1.1.3",
     testCommand: "npm run unit-test",
     gitUrl: "https://github.com/lumenbiomics/anu.git",
     artifacts: [
